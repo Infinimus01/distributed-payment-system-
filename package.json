@@ -1,0 +1,38 @@
+{
+    "name": "distributed-payment-system",
+    "version": "1.0.0",
+    "description": "Production-grade distributed payment processing system",
+    "private": true,
+    "workspaces": [
+        "services/*",
+        "shared"
+    ],
+    "scripts": {
+        "install:all": "npm install && npm install --workspaces",
+        "dev:gateway": "npm run dev --workspace=services/api-gateway",
+        "dev:payment": "npm run dev --workspace=services/payment-service",
+        "dev:wallet": "npm run dev --workspace=services/wallet-service",
+        "dev:all": "concurrently \"npm run dev:gateway\" \"npm run dev:payment\" \"npm run dev:wallet\"",
+        "start:gateway": "npm start --workspace=services/api-gateway",
+        "start:payment": "npm start --workspace=services/payment-service",
+        "start:wallet": "npm start --workspace=services/wallet-service",
+        "migrate:payment": "npm run migrate --workspace=services/payment-service",
+        "migrate:wallet": "npm run migrate --workspace=services/wallet-service",
+        "migrate:all": "npm run migrate:payment && npm run migrate:wallet",
+        "test:all": "npm test --workspaces",
+        "lint:all": "npm run lint --workspaces",
+        "docker:up": "docker-compose up -d",
+        "docker:down": "docker-compose down",
+        "docker:logs": "docker-compose logs -f",
+        "clean": "rm -rf node_modules services/*/node_modules shared/node_modules"
+    },
+    "devDependencies": {
+        "concurrently": "^8.2.2"
+    },
+    "engines": {
+        "node": ">=18.0.0",
+        "npm": ">=9.0.0"
+    },
+    "author": "",
+    "license": "MIT"
+}

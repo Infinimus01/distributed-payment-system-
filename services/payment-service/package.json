@@ -1,0 +1,45 @@
+{
+    "name": "@payment-system/payment-service",
+    "version": "1.0.0",
+    "description": "Payment processing service with idempotency",
+    "main": "src/index.js",
+    "scripts": {
+        "start": "node src/index.js",
+        "dev": "nodemon src/index.js",
+        "test": "jest --coverage",
+        "test:watch": "jest --watch",
+        "test:unit": "jest tests/unit",
+        "test:integration": "jest tests/integration",
+        "lint": "eslint src/"
+    },
+    "keywords": [
+        "payment",
+        "idempotency",
+        "microservice"
+    ],
+    "author": "",
+    "license": "MIT",
+    "dependencies": {
+        "express": "^4.18.2",
+        "pg": "^8.11.3",
+        "redis": "^4.6.10",
+        "dotenv": "^16.3.1",
+        "winston": "^3.11.0",
+        "uuid": "^9.0.1",
+        "joi": "^17.11.0",
+        "helmet": "^7.1.0",
+        "cors": "^2.8.5",
+        "compression": "^1.7.4",
+        "http-status-codes": "^2.3.0",
+        "axios": "^1.6.2"
+    },
+    "devDependencies": {
+        "nodemon": "^3.0.2",
+        "jest": "^29.7.0",
+        "supertest": "^6.3.3",
+        "eslint": "^8.54.0"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    }
+}
