@@ -1,7 +1,8 @@
-version: '3.8'
-
 services:
-  # PostgreSQL for Payment Service
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Infrastructure
+  # ─────────────────────────────────────────────────────────────────────────────
+
   postgres-payment:
     image: postgres:15-alpine
     container_name: payment-postgres
@@ -14,14 +15,14 @@ services:
     volumes:
       - postgres_payment_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d payment_db"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 20s
     networks:
       - payment-network
 
-  # PostgreSQL for Wallet Service
   postgres-wallet:
     image: postgres:15-alpine
     container_name: wallet-postgres
@@ -34,14 +35,14 @@ services:
     volumes:
       - postgres_wallet_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d wallet_db"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 20s
     networks:
       - payment-network
 
-  # Redis for caching and distributed locking
   redis:
     image: redis:7-alpine
     container_name: payment-redis
@@ -49,29 +50,139 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
     networks:
       - payment-network
 
-  # API Gateway Service
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Database Initialization (runs schema migrations once, then exits)
+  # ─────────────────────────────────────────────────────────────────────────────
+
+  db-init:
+    image: postgres:15-alpine
+    container_name: db-init
+    environment:
+      PGPASSWORD: postgres
+    volumes:
+      - ./infrastructure:/infrastructure
+    command: >
+      sh -c "
+        echo '⏳ Waiting for payment db...' &&
+        until psql -h postgres-payment -U postgres -d payment_db -c '\\q' 2>/dev/null; do sleep 2; done &&
+        echo '✅ Payment DB ready. Running schema...' &&
+        psql -h postgres-payment -U postgres -d payment_db -f /infrastructure/schema-payment-service.sql &&
+        echo '⏳ Waiting for wallet db...' &&
+        until psql -h postgres-wallet -U postgres -d wallet_db -c '\\q' 2>/dev/null; do sleep 2; done &&
+        echo '✅ Wallet DB ready. Running schema...' &&
+        psql -h postgres-wallet -U postgres -d wallet_db -f /infrastructure/schema-wallet-service.sql &&
+        echo '🎉 All schemas applied successfully!'
+      "
+    depends_on:
+      postgres-payment:
+        condition: service_healthy
+      postgres-wallet:
+        condition: service_healthy
+    networks:
+      - payment-network
+    restart: "no"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Application Services
+  # ─────────────────────────────────────────────────────────────────────────────
+
+  wallet-service:
+    build:
+      context: .
+      dockerfile: services/wallet-service/Dockerfile
+      target: production
+    container_name: wallet-service
+    ports:
+      - "3002:3002"
+    environment:
+      NODE_ENV: production
+      PORT: 3002
+      SERVICE_NAME: wallet-service
+      DB_HOST: postgres-wallet
+      DB_PORT: 5432
+      DB_NAME: wallet_db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_POOL_MIN: 2
+      DB_POOL_MAX: 10
+      LOG_LEVEL: info
+    depends_on:
+      postgres-wallet:
+        condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
+    networks:
+      - payment-network
+    restart: unless-stopped
+
+  payment-service:
+    build:
+      context: .
+      dockerfile: services/payment-service/Dockerfile
+      target: production
+    container_name: payment-service
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      SERVICE_NAME: payment-service
+      DB_HOST: postgres-payment
+      DB_PORT: 5432
+      DB_NAME: payment_db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_POOL_MIN: 2
+      DB_POOL_MAX: 10
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      WALLET_SERVICE_URL: http://wallet-service:3002
+      MAX_RETRY_ATTEMPTS: 3
+      RETRY_DELAY_MS: 1000
+      IDEMPOTENCY_KEY_TTL: 86400
+      LOG_LEVEL: info
+    depends_on:
+      postgres-payment:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
+      wallet-service:
+        condition: service_started
+    networks:
+      - payment-network
+    restart: unless-stopped
+
   api-gateway:
     build:
-      context: ./services/api-gateway
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/api-gateway/Dockerfile
+      target: production
     container_name: api-gateway
     ports:
       - "3000:3000"
     environment:
-      NODE_ENV: development
+      NODE_ENV: production
       PORT: 3000
+      SERVICE_NAME: api-gateway
       REDIS_HOST: redis
+      REDIS_PORT: 6379
       PAYMENT_SERVICE_URL: http://payment-service:3001
       WALLET_SERVICE_URL: http://wallet-service:3002
+      RATE_LIMIT_WINDOW_MS: 60000
+      RATE_LIMIT_MAX_REQUESTS: 100
+      LOG_LEVEL: info
     depends_on:
       redis:
         condition: service_healthy
@@ -83,55 +194,19 @@ services:
       - payment-network
     restart: unless-stopped
 
-  # Payment Service
-  payment-service:
-    build:
-      context: ./services/payment-service
-      dockerfile: Dockerfile
-    container_name: payment-service
-    ports:
-      - "3001:3001"
-    environment:
-      NODE_ENV: development
-      PORT: 3001
-      DB_HOST: postgres-payment
-      DB_PORT: 5432
-      DB_NAME: payment_db
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      REDIS_HOST: redis
-      WALLET_SERVICE_URL: http://wallet-service:3002
-    depends_on:
-      postgres-payment:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - payment-network
-    restart: unless-stopped
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Frontend Dashboard (nginx static server)
+  # ─────────────────────────────────────────────────────────────────────────────
 
-  # Wallet Service
-  wallet-service:
-    build:
-      context: ./services/wallet-service
-      dockerfile: Dockerfile
-    container_name: wallet-service
+  frontend:
+    image: nginx:alpine
+    container_name: payflow-dashboard
     ports:
-      - "3002:3002"
-    environment:
-      NODE_ENV: development
-      PORT: 3002
-      DB_HOST: postgres-wallet
-      DB_PORT: 5432
-      DB_NAME: wallet_db
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      REDIS_HOST: redis
+      - "8080:80"
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
     depends_on:
-      postgres-wallet:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      - api-gateway
     networks:
       - payment-network
     restart: unless-stopped
