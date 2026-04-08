@@ -1,5 +1,5 @@
 const { createClient } = require('redis');
-const logger = require('../utils/logger');
+const logger = require('../../utils/logger');
 
 class RedisClient {
     constructor(config) {

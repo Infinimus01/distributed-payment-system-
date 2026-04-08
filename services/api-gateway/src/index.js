@@ -10,6 +10,8 @@ const apiKeyAuth = require('./middleware/apiKeyAuth');
 const rateLimiter = require('./middleware/rateLimiter');
 const errorHandler = require('./middleware/errorHandler');
 const PaymentRoutes = require('./routes/paymentRoutes');
+const WalletRoutes = require('./routes/walletRoutes');
+const { registry: cbRegistry } = require('../shared/resilience/CircuitBreaker');
 
 class App {
     constructor() {
@@ -34,12 +36,13 @@ class App {
 
             // Initialize route handlers
             const paymentRoutes = new PaymentRoutes(this.serviceProxy);
+            const walletRoutes = new WalletRoutes(this.serviceProxy);
 
             // Setup middleware
             this.setupMiddleware();
 
             // Setup routes
-            this.setupRoutes(paymentRoutes);
+            this.setupRoutes(paymentRoutes, walletRoutes);
 
             // Setup error handling
             this.app.use(errorHandler);
@@ -56,10 +59,16 @@ class App {
 
     setupMiddleware() {
         // Security headers
-        this.app.use(helmet());
+        this.app.use(helmet({
+            crossOriginResourcePolicy: { policy: 'cross-origin' }
+        }));
 
-        // CORS
-        this.app.use(cors());
+        // CORS — allow any origin (dashboard, Postman, etc.)
+        this.app.use(cors({
+            origin: '*',
+            methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+            allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'Idempotency-Key', 'x-idempotency-key']
+        }));
 
         // Compression
         this.app.use(compression());
@@ -87,25 +96,35 @@ class App {
         this.app.use('/api', rateLimiter(this.redis, config));
     }
 
-    setupRoutes(paymentRoutes) {
+    setupRoutes(paymentRoutes, walletRoutes) {
         // Health check (no auth required)
         this.app.get('/health', async (req, res) => {
             try {
                 const redisHealth = await this.redis.healthCheck();
                 const servicesHealth = await this.serviceProxy.healthCheckAll();
+                const circuitBreakers = cbRegistry.getAllStats();
 
                 const allHealthy = redisHealth.healthy &&
                     Object.values(servicesHealth).every(s => s.healthy);
 
+                // Circuit breaker mein koi OPEN hai toh degraded
+                const anyCircuitOpen = Object.values(circuitBreakers)
+                    .some(cb => cb.state === 'OPEN');
+
+                const overallStatus = !allHealthy ? 'unhealthy'
+                    : anyCircuitOpen ? 'degraded'
+                    : 'healthy';
+
                 res.status(allHealthy ? 200 : 503).json({
-                    status: allHealthy ? 'healthy' : 'unhealthy',
+                    status: overallStatus,
                     service: config.serviceName,
                     timestamp: new Date().toISOString(),
                     redis: {
                         healthy: redisHealth.healthy,
                         connected: redisHealth.connected
                     },
-                    services: servicesHealth
+                    services: servicesHealth,
+                    circuitBreakers
                 });
             } catch (error) {
                 res.status(503).json({
@@ -139,6 +158,14 @@ class App {
         apiRouter.get('/payments/user/:userId', (req, res, next) => {
             paymentRoutes.getPaymentsByUser(req, res, next);
         });
+
+        // Wallet routes
+        apiRouter.post('/wallets/create', (req, res, next) => walletRoutes.createWallet(req, res, next));
+        apiRouter.post('/wallets/debit', (req, res, next) => walletRoutes.debitWallet(req, res, next));
+        apiRouter.post('/wallets/credit', (req, res, next) => walletRoutes.creditWallet(req, res, next));
+        apiRouter.get('/wallets/:walletId', (req, res, next) => walletRoutes.getWallet(req, res, next));
+        apiRouter.get('/wallets/:walletId/transactions', (req, res, next) => walletRoutes.getTransactionHistory(req, res, next));
+        apiRouter.get('/wallets/:walletId/reconcile', (req, res, next) => walletRoutes.reconcileBalance(req, res, next));
 
         this.app.use('/api', apiRouter);
 

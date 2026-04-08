@@ -7,6 +7,7 @@ const logger = require('./utils/logger');
 const DatabaseClient = require('./infrastructure/database/DatabaseClient');
 const RedisClient = require('./infrastructure/cache/RedisClient');
 const WalletClient = require('./infrastructure/clients/WalletClient');
+const { registry: cbRegistry } = require('../shared/resilience/CircuitBreaker');
 const PaymentRepository = require('./infrastructure/repositories/PaymentRepository');
 const IdempotencyService = require('./services/IdempotencyService');
 const EventPublisher = require('./services/EventPublisher');
@@ -153,7 +154,8 @@ class App {
                     },
                     walletService: {
                         healthy: walletHealth
-                    }
+                    },
+                    circuitBreakers: cbRegistry.getAllStats()
                 });
             } catch (error) {
                 res.status(503).json({

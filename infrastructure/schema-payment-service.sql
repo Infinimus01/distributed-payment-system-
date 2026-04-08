@@ -19,7 +19,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 --   - Foreign key to external gateway transactions
 -- ============================================================================
 
-CREATE TABLE payments (
+CREATE TABLE IF NOT EXISTS payments (
     -- Primary identifier
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     
@@ -70,31 +70,31 @@ CREATE TABLE payments (
 
 -- CRITICAL: Unique index on idempotency_key to prevent duplicate payments
 -- This is the primary mechanism for idempotency enforcement
-CREATE UNIQUE INDEX idx_payments_idempotency_key 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_idempotency_key 
     ON payments(idempotency_key);
 
 -- Fast lookup by payment ID (already covered by PRIMARY KEY)
 
 -- Fast lookup by user for payment history
-CREATE INDEX idx_payments_user_id 
+CREATE INDEX IF NOT EXISTS idx_payments_user_id 
     ON payments(user_id, created_at DESC);
 
 -- Fast lookup by status for processing queues
-CREATE INDEX idx_payments_status 
+CREATE INDEX IF NOT EXISTS idx_payments_status 
     ON payments(status, created_at ASC) 
     WHERE status IN ('PENDING', 'PROCESSING');
 
 -- Fast lookup by gateway transaction ID for reconciliation
-CREATE INDEX idx_payments_gateway_transaction_id 
+CREATE INDEX IF NOT EXISTS idx_payments_gateway_transaction_id 
     ON payments(gateway_transaction_id) 
     WHERE gateway_transaction_id IS NOT NULL;
 
 -- Composite index for merchant reporting
-CREATE INDEX idx_payments_merchant_status 
+CREATE INDEX IF NOT EXISTS idx_payments_merchant_status 
     ON payments(merchant_id, status, created_at DESC);
 
 -- Index on created_at for time-based queries and cleanup
-CREATE INDEX idx_payments_created_at 
+CREATE INDEX IF NOT EXISTS idx_payments_created_at 
     ON payments(created_at DESC);
 
 -- ============================================================================
@@ -107,7 +107,7 @@ CREATE INDEX idx_payments_created_at
 --   - Debugging and compliance
 -- ============================================================================
 
-CREATE TABLE payment_events (
+CREATE TABLE IF NOT EXISTS payment_events (
     -- Primary identifier
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     
@@ -137,11 +137,11 @@ CREATE TABLE payment_events (
 -- ============================================================================
 
 -- Fast lookup of events for a specific payment
-CREATE INDEX idx_payment_events_payment_id 
+CREATE INDEX IF NOT EXISTS idx_payment_events_payment_id 
     ON payment_events(payment_id, created_at ASC);
 
 -- Fast lookup by event type for analytics
-CREATE INDEX idx_payment_events_event_type 
+CREATE INDEX IF NOT EXISTS idx_payment_events_event_type 
     ON payment_events(event_type, created_at DESC);
 
 -- ============================================================================
@@ -154,7 +154,7 @@ CREATE INDEX idx_payment_events_event_type
 --   - Response caching for identical requests
 -- ============================================================================
 
-CREATE TABLE idempotency_cache (
+CREATE TABLE IF NOT EXISTS idempotency_cache (
     -- Idempotency key (primary key)
     idempotency_key VARCHAR(255) PRIMARY KEY,
     
@@ -171,7 +171,7 @@ CREATE TABLE idempotency_cache (
 );
 
 -- Index for TTL-based cleanup
-CREATE INDEX idx_idempotency_cache_expires_at 
+CREATE INDEX IF NOT EXISTS idx_idempotency_cache_expires_at 
     ON idempotency_cache(expires_at) 
     WHERE expires_at < NOW();
 

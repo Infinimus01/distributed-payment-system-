@@ -1,5 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
-const logger = require('../utils/logger');
+const logger = require('../../utils/logger');
 
 /**
  * Payment Repository - Data access layer for payments

@@ -19,7 +19,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 --   - Supports multiple currencies
 -- ============================================================================
 
-CREATE TABLE wallets (
+CREATE TABLE IF NOT EXISTS wallets (
     -- Primary identifier
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     
@@ -64,14 +64,14 @@ CREATE TABLE wallets (
 -- ============================================================================
 
 -- Fast lookup by user_id (most common query)
-CREATE INDEX idx_wallets_user_id 
+CREATE INDEX IF NOT EXISTS idx_wallets_user_id 
     ON wallets(user_id);
 
 -- Composite index for user + currency lookup
 -- Already covered by UNIQUE constraint: unique_user_currency
 
 -- Index for status-based queries
-CREATE INDEX idx_wallets_status 
+CREATE INDEX IF NOT EXISTS idx_wallets_status 
     ON wallets(status) 
     WHERE status = 'ACTIVE';
 
@@ -86,7 +86,7 @@ CREATE INDEX idx_wallets_status
 --   - Idempotency support
 -- ============================================================================
 
-CREATE TABLE ledger_entries (
+CREATE TABLE IF NOT EXISTS ledger_entries (
     -- Primary identifier
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     
@@ -135,22 +135,22 @@ CREATE TABLE ledger_entries (
 -- ============================================================================
 
 -- Fast lookup by wallet_id for transaction history
-CREATE INDEX idx_ledger_entries_wallet_id 
+CREATE INDEX IF NOT EXISTS idx_ledger_entries_wallet_id 
     ON ledger_entries(wallet_id, created_at DESC);
 
 -- Fast lookup by reference (e.g., payment_id)
-CREATE INDEX idx_ledger_entries_reference 
+CREATE INDEX IF NOT EXISTS idx_ledger_entries_reference 
     ON ledger_entries(reference_type, reference_id);
 
 -- Index on idempotency_key for fast duplicate detection
 -- Already covered by UNIQUE constraint: unique_ledger_idempotency
 
 -- Index for time-based queries and reporting
-CREATE INDEX idx_ledger_entries_created_at 
+CREATE INDEX IF NOT EXISTS idx_ledger_entries_created_at 
     ON ledger_entries(created_at DESC);
 
 -- Composite index for wallet + transaction type queries
-CREATE INDEX idx_ledger_entries_wallet_type 
+CREATE INDEX IF NOT EXISTS idx_ledger_entries_wallet_type 
     ON ledger_entries(wallet_id, transaction_type, created_at DESC);
 
 -- ============================================================================
@@ -163,7 +163,7 @@ CREATE INDEX idx_ledger_entries_wallet_type
 --   - Deadlock prevention
 -- ============================================================================
 
-CREATE TABLE wallet_locks (
+CREATE TABLE IF NOT EXISTS wallet_locks (
     -- Wallet identifier (primary key)
     wallet_id UUID PRIMARY KEY REFERENCES wallets(id) ON DELETE CASCADE,
     
@@ -183,7 +183,7 @@ CREATE TABLE wallet_locks (
 );
 
 -- Index for TTL-based cleanup of expired locks
-CREATE INDEX idx_wallet_locks_expires_at 
+CREATE INDEX IF NOT EXISTS idx_wallet_locks_expires_at 
     ON wallet_locks(expires_at) 
     WHERE expires_at < NOW();
 
@@ -197,7 +197,7 @@ CREATE INDEX idx_wallet_locks_expires_at
 --   - Reconciliation with ledger
 -- ============================================================================
 
-CREATE TABLE balance_snapshots (
+CREATE TABLE IF NOT EXISTS balance_snapshots (
     -- Primary identifier
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     
@@ -229,11 +229,11 @@ CREATE TABLE balance_snapshots (
 -- ============================================================================
 
 -- Fast lookup by wallet for balance history
-CREATE INDEX idx_balance_snapshots_wallet 
+CREATE INDEX IF NOT EXISTS idx_balance_snapshots_wallet 
     ON balance_snapshots(wallet_id, snapshot_at DESC);
 
 -- Index for time-based queries
-CREATE INDEX idx_balance_snapshots_time 
+CREATE INDEX IF NOT EXISTS idx_balance_snapshots_time 
     ON balance_snapshots(snapshot_at DESC);
 
 -- ============================================================================
