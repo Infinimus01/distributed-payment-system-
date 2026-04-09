@@ -159,6 +159,11 @@ class App {
             paymentRoutes.getPaymentsByUser(req, res, next);
         });
 
+        // Reconciliation
+        apiRouter.get('/payments/reconcile/run', (req, res, next) => {
+            paymentRoutes.reconcile(req, res, next);
+        });
+
         // Wallet routes
         apiRouter.post('/wallets/create', (req, res, next) => walletRoutes.createWallet(req, res, next));
         apiRouter.post('/wallets/debit', (req, res, next) => walletRoutes.debitWallet(req, res, next));

@@ -14,6 +14,7 @@ const EventPublisher = require('./services/EventPublisher');
 const PaymentService = require('./services/PaymentService');
 const PaymentProcessor = require('./services/PaymentProcessor');
 const PaymentController = require('./controllers/PaymentController');
+const ReconciliationService = require('./services/ReconciliationService');
 const createPaymentRoutes = require('./routes/paymentRoutes');
 const errorHandler = require('./middleware/errorHandler');
 
@@ -79,9 +80,15 @@ class App {
             );
 
             // Initialize controller
+            const reconciliationService = new ReconciliationService(
+                paymentRepo,
+                this.walletClient
+            );
+
             const paymentController = new PaymentController(
                 this.paymentService,
-                this.paymentProcessor
+                this.paymentProcessor,
+                reconciliationService
             );
 
             // Setup middleware

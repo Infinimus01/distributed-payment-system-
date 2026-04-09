@@ -108,6 +108,24 @@ class PaymentRoutes {
             next(error);
         }
     }
+
+    /**
+     * GET /api/payments/reconcile/run
+     * Run reconciliation
+     */
+    async reconcile(req, res, next) {
+        try {
+            const { from, to, limit } = req.query;
+            const queryString = new URLSearchParams(
+                Object.fromEntries(Object.entries({ from, to, limit }).filter(([_, v]) => v))
+            ).toString();
+            const path = `/payments/reconcile/run${queryString ? '?' + queryString : ''}`;
+            const result = await this.serviceProxy.forwardToPaymentService('GET', path);
+            res.status(result.status).json(result.data);
+        } catch (error) {
+            next(error);
+        }
+    }
 }
 
 module.exports = PaymentRoutes;

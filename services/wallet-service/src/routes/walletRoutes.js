@@ -33,6 +33,11 @@ function createWalletRoutes(walletController) {
         walletController.reconcileBalance(req, res, next);
     });
 
+    // Verify ledger entry exists — used by ReconciliationService
+    router.get('/:walletId/ledger/:ledgerEntryId', (req, res, next) => {
+        walletController.verifyLedgerEntry(req, res, next);
+    });
+
     return router;
 }
 

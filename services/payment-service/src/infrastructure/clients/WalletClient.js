@@ -185,6 +185,23 @@ class WalletClient {
         }
     }
 
+
+    /**
+     * Verify ledger entry exists — used by ReconciliationService
+     * Returns true if entry exists, false if not found
+     */
+    async verifyLedgerEntry(walletId, ledgerEntryId) {
+        try {
+            const response = await this.client.get(
+                `/wallets/${walletId}/ledger/${ledgerEntryId}`
+            );
+            return response.data.data?.exists === true;
+        } catch (error) {
+            if (error.response?.status === 404) return false;
+            throw new Error('WALLET_SERVICE_UNAVAILABLE');
+        }
+    }
+
     /**
      * Health check
      */

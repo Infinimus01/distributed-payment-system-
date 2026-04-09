@@ -89,6 +89,13 @@ class LedgerRepository {
     /**
      * Find ledger entry by idempotency key
      */
+
+    async findById(ledgerEntryId) {
+        const query = `SELECT * FROM ledger_entries WHERE id = $1 LIMIT 1`;
+        const rows = await this.db.query(query, [ledgerEntryId]);
+        return rows.length > 0 ? rows[0] : null;
+    }
+
     async findByIdempotencyKey(idempotencyKey, client = null) {
         const executor = client || this.db;
 

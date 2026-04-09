@@ -192,6 +192,34 @@ class PaymentRepository {
             processedAt: row.processed_at
         };
     }
+
+    async findByDateRange(from, to, limit = 100) {
+        const query = `
+            SELECT * FROM payments
+            WHERE created_at >= $1 AND created_at <= $2
+            ORDER BY created_at DESC
+            LIMIT $3
+        `;
+        const result = await this.db.query(query, [from, to, limit]);
+        const rows = Array.isArray(result) ? result : (result.rows || []);
+        return rows.map(row => ({
+            id: row.id,
+            userId: row.user_id,
+            amount: parseInt(row.amount),
+            currency: row.currency,
+            status: row.status,
+            idempotencyKey: row.idempotency_key,
+            merchantId: row.merchant_id,
+            description: row.description,
+            metadata: row.metadata,
+            gatewayTransactionId: row.gateway_transaction_id,
+            failureReason: row.failure_reason,
+            retryCount: row.retry_count,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at,
+            processedAt: row.processed_at
+        }));
+    }
 }
 
 module.exports = PaymentRepository;

@@ -28,6 +28,11 @@ function createPaymentRoutes(paymentController) {
         paymentController.getPaymentsByUserId(req, res, next);
     });
 
+    // Reconciliation — detect mismatches between payments and wallet ledger
+    router.get('/reconcile/run', (req, res, next) => {
+        paymentController.reconcile(req, res, next);
+    });
+
     // Update payment status
     router.patch('/:paymentId/status', (req, res, next) => {
         paymentController.updatePaymentStatus(req, res, next);

@@ -5,9 +5,10 @@ const { StatusCodes } = require('http-status-codes');
  * Payment Controller - HTTP request handlers
  */
 class PaymentController {
-    constructor(paymentService, paymentProcessor) {
+    constructor(paymentService, paymentProcessor, reconciliationService) {
         this.paymentService = paymentService;
         this.paymentProcessor = paymentProcessor;
+        this.reconciliationService = reconciliationService;
     }
 
     /**
@@ -325,6 +326,20 @@ class PaymentController {
                     }
                 }
             });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    async reconcile(req, res, next) {
+        try {
+            const { from, to, limit } = req.query;
+            const results = await this.reconciliationService.reconcile({
+                from,
+                to,
+                limit: limit ? parseInt(limit) : 100,
+            });
+            res.status(200).json({ success: true, data: results });
         } catch (error) {
             next(error);
         }
