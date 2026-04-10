@@ -65,34 +65,19 @@ GET /api/payments/anomaly/check/:userId
 
 ## Architecture
 
-┌─────────────────┐
-                │   API Gateway   │
-                │  Auth + RateLimit│
-                └────────┬────────┘
-                         │
-          ┌──────────────┴──────────────┐
-          │                             │
-┌─────────▼──────────┐      ┌──────────▼──────────┐
-│  Payment Service   │      │   Wallet Service     │
-│                    │      │                      │
-│ • Circuit Breaker  │─────▶│ • Ledger (append-only│
-│ • Smart Retry      │      │ • ACID transactions  │
-│ • Anomaly Detection│      │ • Row-level locking  │
-│ • Reconciliation   │      │                      │
-└─────────┬──────────┘      └──────────┬───────────┘
-          │                            │
-┌─────────▼──────────────────────────▼─┐
-│              PostgreSQL               │
-│    Payment DB          Wallet DB      │
-└───────────────────────────────────────┘
-          │
-┌─────────▼──────────┐
-│        Redis        │
-│ • Idempotency cache │
-│ • Distributed locks │
-│ • Anomaly tracking  │
-│ • Rate limiting     │
-└────────────────────┘
+**3 decoupled microservices behind an API Gateway:**
+
+| Service | Responsibility |
+|---------|---------------|
+| API Gateway | Auth, rate limiting, request routing |
+| Payment Service | Payment lifecycle, circuit breaker, anomaly detection, reconciliation |
+| Wallet Service | Balance management, append-only ledger, ACID transactions |
+
+**Infrastructure:**
+- **PostgreSQL** — Separate databases per service (payment DB + wallet DB)
+- **Redis** — Idempotency cache, distributed locks, anomaly tracking, rate limiting
+
+**Request flow:** Client → API Gateway → Payment Service → Wallet Service (via circuit-breaker-protected HTTP)
 
 ---
 
