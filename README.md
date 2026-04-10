@@ -1,149 +1,156 @@
-# Distributed Payment Processing System
+# PayCore — Distributed Payment Infrastructure
 
-A production-grade, distributed payment processing system designed for **high availability**, **reliability**, and **financial correctness**. It handles payments, wallet debits/credits, and ledger management with exactly-once processing guarantees.
+> Production-grade payment processing engine built for fintech teams who are tired of rebuilding the same reliability patterns from scratch.
 
-## 🚀 Key Features
+## The Problem
 
-*   **Microservices Architecture**: Decoupled services for API Gateway, Payments, and Wallets.
-*   **Idempotency Everywhere**: End-to-end idempotency using Redis and Postgres constraints to prevent double-spending and duplicate processing.
-*   **Distributed Locking**: Redis-based locking prevents race conditions on wallet balances.
-*   **Event-Driven & Ledger**: Immutable ledger for auditability and event sourcing concepts for state changes.
-*   **Resiliency**: Exponential backoff retries, graceful degradation, and failure handling for network partitions.
-*   **Rate Limiting**: Sliding window rate limiting at the Gateway level.
+Every fintech team eventually builds the same things:
+- A payment service that silently fails when the wallet service goes down
+- A retry mechanism that charges customers twice on network errors  
+- No way to detect when payments are marked "completed" but money never moved
+- Fraud patterns that go unnoticed until chargebacks arrive
 
-## 🏗 Architecture
+PayCore solves all four. Out of the box.
 
-```mermaid
-graph TD
-    Client[Client Request] -->|REST /w API Key| Gateway[API Gateway]
-    
-    subgraph "Infrastructure"
-        RedisCache[(Redis Cache/Locks)]
-        PG_Payment[(Payment DB)]
-        PG_Wallet[(Wallet DB)]
-    end
+---
 
-    subgraph "Services"
-        Gateway -->|Forward Reqs| PaymentSvc[Payment Service]
-        Gateway -->|Forward Reqs| WalletSvc[Wallet Service]
-        
-        PaymentSvc -->|1. Idempotency Check| RedisCache
-        PaymentSvc -->|2. Persist Intent| PG_Payment
-        PaymentSvc -->|3. Debit Command| WalletSvc
-        
-        WalletSvc -->|4. Lock Wallet| RedisCache
-        WalletSvc -->|5. Update Ledger| PG_Wallet
-    end
+## What's Inside
+
+### Circuit Breaker
+Prevents cascading failures when downstream services degrade. After 5 consecutive failures, the circuit opens and fast-fails all requests — no more 10-second timeouts piling up. Recovers automatically after 30 seconds.
+
+CLOSED (normal) → OPEN (fast-fail) → HALF_OPEN (testing) → CLOSED (recovered)
+Tested: Full lifecycle under real wallet service outage. Recovery confirmed.
+
+### Smart Retry with Error Classification
+Not all errors should be retried. PayCore classifies errors before retrying:
+
+| Error Type | Action |
+|------------|--------|
+| Network timeout, 503 | Retry with exponential backoff + jitter |
+| Insufficient funds | Abort immediately — retrying wastes time |
+| Card expired | Abort immediately |
+| Unknown | Retry with caution |
+
+Jitter prevents thundering herd on service recovery.
+
+### Reconciliation Engine
+Detects mismatches between your payment records and wallet ledger.
+
+```bash
+GET /api/payments/reconcile/run?from=2026-01-01&to=2026-01-02
 ```
 
-### Components
+Catches:
+- `COMPLETED_LEDGER_MISSING` — payment marked completed, wallet never debited (money lost)
+- `FAILED_BUT_DEBITED` — payment failed, wallet was debited (double charge risk) 
+- `STUCK_PENDING` — payment stuck > 10 minutes (processing failure)
+- `STUCK_PROCESSING` — payment stuck in processing > 5 minutes
 
-1.  **API Gateway (Node.js/Express)**: Entry point. Handles Authentication (API Keys), Rate Limiting (Redis), and Request Forwarding.
-2.  **Payment Service (Node.js/Express)**: Orchestrates payment flow. manages payment state (`PENDING` -> `PROCESSING` -> `COMPLETED/FAILED`), ensures idempotency.
-3.  **Wallet Service (Node.js/Express)**: Manages user balances. Maintains an append-only ledger. Enforces strict consistency on funds.
-4.  **Infrastructure**:
-    *   **PostgreSQL**: Primary data store. Separate databases for Payment and Wallet services to ensure decoupling.
-    *   **Redis**: Used for caching (idempotency keys), distributed locks, and rate limiting counters.
+### Anomaly Detection
+Rule-based fraud signals on every payment:
 
-## 🛠️ Getting Started
+| Rule | Threshold | Severity |
+|------|-----------|----------|
+| Velocity | >5 payments/60s same user | HIGH |
+| Large Amount | >5000 per payment | MEDIUM |
+| Failed Streak | >3 consecutive failures | HIGH |
+| Duplicate Amount | Same amount 3x in 5min | MEDIUM |
 
-### Prerequisites
-
-*   Node.js >= 18
-*   Docker & Docker Compose
-*   Make (optional, but recommended)
-
-### Running Locally
-
-1.  **Clone & Install**:
-    ```bash
-    git clone <repo-url>
-    cd distributed-payment-system
-    npm install
-    ```
-
-2.  **Start Infrastructure & Services**:
-    We use Docker Compose to spin up Postgres, Redis, and all microservices.
-    ```bash
-    docker-compose up --build
-    ```
-    *   *Alternatively, run `make dev` if `make` is available.*
-
-3.  **Initialize Databases**:
-    The system will automatically run migrations on startup (in production scenarios), or you can use the provided script:
-    ```bash
-    ./infrastructure/init-databases.sh
-    ```
-
-4.  **Verify Status**:
-    Check if services are healthy:
-    ```bash
-    curl http://localhost:3000/health
-    ```
-
-## 📖 API Examples
-
-### 1. Create a Wallet
-Initialize a new wallet for a user.
 ```bash
+GET /api/payments/anomaly/check/:userId
+```
+
+---
+
+## Architecture
+
+┌─────────────────┐
+                │   API Gateway   │
+                │  Auth + RateLimit│
+                └────────┬────────┘
+                         │
+          ┌──────────────┴──────────────┐
+          │                             │
+┌─────────▼──────────┐      ┌──────────▼──────────┐
+│  Payment Service   │      │   Wallet Service     │
+│                    │      │                      │
+│ • Circuit Breaker  │─────▶│ • Ledger (append-only│
+│ • Smart Retry      │      │ • ACID transactions  │
+│ • Anomaly Detection│      │ • Row-level locking  │
+│ • Reconciliation   │      │                      │
+└─────────┬──────────┘      └──────────┬───────────┘
+          │                            │
+┌─────────▼──────────────────────────▼─┐
+│              PostgreSQL               │
+│    Payment DB          Wallet DB      │
+└───────────────────────────────────────┘
+          │
+┌─────────▼──────────┐
+│        Redis        │
+│ • Idempotency cache │
+│ • Distributed locks │
+│ • Anomaly tracking  │
+│ • Rate limiting     │
+└────────────────────┘
+
+---
+
+## Performance
+
+Load tested with k6 — 50 concurrent users, 2 minutes:
+
+| Metric | Result |
+|--------|--------|
+| Throughput | 51 req/sec |
+| p50 latency | 9ms |
+| p90 latency | 19ms |
+| p95 latency | 32ms |
+| Max latency | 177ms |
+
+---
+
+## Guarantees
+
+**Exactly-once processing** — Idempotency keys stored in Redis (fast path) and PostgreSQL (truth path). Safe to retry indefinitely.
+
+**Balance integrity** — Row-level locking + append-only ledger. Balance never goes negative under concurrent load.
+
+**Fault tolerance** — Circuit breaker + smart retry. System degrades gracefully, not catastrophically.
+
+---
+
+## Quick Start
+
+```bash
+git clone https://github.com/Infinimus01/distributed-payment-system-
+cd distributed-payment-system-
+docker-compose up --build
+```
+
+```bash
+# Create wallet
 curl -X POST http://localhost:3000/api/wallets/create \
   -H "X-API-Key: test_key_merchant_001" \
   -H "Content-Type: application/json" \
-  -d '{
-    "userId": "user_123",
-    "currency": "USD",
-    "initialBalance": 10000
-  }'
-# Response: { "wallet": { "id": "wallet_abc...", "balance": 10000 } }
-```
+  -d '{"userId":"550e8400-e29b-41d4-a716-446655440000","currency":"USD","initialBalance":10000}'
 
-### 2. Make a Payment
-Process a payment idempotently. Requires `Idempotency-Key` header.
-```bash
+# Create and process payment
 curl -X POST http://localhost:3000/api/payments \
   -H "X-API-Key: test_key_merchant_001" \
-  -H "Idempotency-Key: unique_req_id_001" \
+  -H "Idempotency-Key: unique-key-001" \
   -H "Content-Type: application/json" \
-  -d '{
-    "userId": "user_123",
-    "amount": 500,
-    "currency": "USD",
-    "merchantId": "merchant_xyz"
-  }'
+  -d '{"userId":"550e8400-e29b-41d4-a716-446655440000","amount":500,"currency":"USD","merchantId":"merchant_xyz"}'
+
+# Run reconciliation
+curl http://localhost:3000/api/payments/reconcile/run \
+  -H "X-API-Key: test_key_merchant_001"
 ```
 
-### 3. Process the Payment (Debit)
-Trigger the processing logic (separating intent from execution allows better control).
-```bash
-curl -X POST http://localhost:3000/api/payments/{payment_id}/process \
-  -H "X-API-Key: test_key_merchant_001" \
-  -d '{ "walletId": "wallet_abc..." }'
-```
+---
 
-## 🛡️ Guarantees
+## Stack
 
-*   **Exactly-Once Processing**: Utilizing `Idempotency-Key` headers stored in Redis (fast path) and Postgres (truth path). Even if the client retries a request, the system will execute the financial transaction exactly once.
-*   **Balance Integrity**: The Wallet Service uses row-level locking (`FOR UPDATE`) or optimistic concurrency control alongside an append-only ledger to ensure balances never go negative (unless allowed) and race conditions don't corrupt funds.
-*   **Fault Tolerance**: If the `Wallet Service` is temporarily down, the `Payment Service` retries with exponential backoff. If it fails permanently, the payment status is recorded as `FAILED`, preserving system consistency.
+Node.js · TypeScript · PostgreSQL · Redis · Docker · Kubernetes-ready
 
-## 📂 Project Structure
-
-```
-distributed-payment-system/
-├── services/
-│   ├── api-gateway/       # Routing, Auth, Rate Limiting
-│   ├── payment-service/   # Payment Lifecycle, Idempotency
-│   └── wallet-service/    # Ledger, Balance Management
-├── shared/                # Shared Types, Events, and constants
-├── infrastructure/        # SQL Schemas, Docker configs
-├── docker-compose.yml     # Orchestration
-└── package.json           # Monorepo root
-```
-
-## 🧪 Testing
-
-Run integration tests to verify the flow:
-```bash
-npm run test:integration
-```
-This spawns test instances and hits the API endpoints to verify duplicate handling and concurrent debiting scenarios.
+Built by [Amlendu Pandey](https://linkedin.com/in/amlendupandey16)
