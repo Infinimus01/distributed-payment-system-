@@ -65,19 +65,7 @@ GET /api/payments/anomaly/check/:userId
 
 ## Architecture
 
-**3 decoupled microservices behind an API Gateway:**
-
-| Service | Responsibility |
-|---------|---------------|
-| API Gateway | Auth, rate limiting, request routing |
-| Payment Service | Payment lifecycle, circuit breaker, anomaly detection, reconciliation |
-| Wallet Service | Balance management, append-only ledger, ACID transactions |
-
-**Infrastructure:**
-- **PostgreSQL** — Separate databases per service (payment DB + wallet DB)
-- **Redis** — Idempotency cache, distributed locks, anomaly tracking, rate limiting
-
-**Request flow:** Client → API Gateway → Payment Service → Wallet Service (via circuit-breaker-protected HTTP)
+![Architecture Diagram](docs/architecture.png)
 
 ---
 
