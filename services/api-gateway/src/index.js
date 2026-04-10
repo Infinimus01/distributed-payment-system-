@@ -164,6 +164,11 @@ class App {
             paymentRoutes.reconcile(req, res, next);
         });
 
+        // Anomaly stats
+        apiRouter.get('/payments/anomaly/check/:userId', (req, res, next) => {
+            paymentRoutes.getAnomalyStats(req, res, next);
+        });
+
         // Wallet routes
         apiRouter.post('/wallets/create', (req, res, next) => walletRoutes.createWallet(req, res, next));
         apiRouter.post('/wallets/debit', (req, res, next) => walletRoutes.debitWallet(req, res, next));

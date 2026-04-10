@@ -15,6 +15,7 @@ const PaymentService = require('./services/PaymentService');
 const PaymentProcessor = require('./services/PaymentProcessor');
 const PaymentController = require('./controllers/PaymentController');
 const ReconciliationService = require('./services/ReconciliationService');
+const AnomalyDetector = require('./services/AnomalyDetector');
 const createPaymentRoutes = require('./routes/paymentRoutes');
 const errorHandler = require('./middleware/errorHandler');
 
@@ -80,6 +81,13 @@ class App {
             );
 
             // Initialize controller
+            const anomalyDetector = new AnomalyDetector(this.redis, {
+                velocityLimit: 5,
+                velocityWindowSec: 60,
+                largeAmountThreshold: 5000,
+                failedStreakLimit: 3,
+            });
+
             const reconciliationService = new ReconciliationService(
                 paymentRepo,
                 this.walletClient
@@ -88,7 +96,8 @@ class App {
             const paymentController = new PaymentController(
                 this.paymentService,
                 this.paymentProcessor,
-                reconciliationService
+                reconciliationService,
+                anomalyDetector
             );
 
             // Setup middleware

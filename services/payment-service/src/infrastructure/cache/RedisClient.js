@@ -85,6 +85,44 @@ class RedisClient {
         }
     }
 
+
+    async rpush(key, value) {
+        try {
+            const prefixedKey = this.getPrefixedKey(key);
+            return await this.client.rPush(prefixedKey, value);
+        } catch (error) {
+            logger.error('Redis rpush error', { key, error: error.message });
+        }
+    }
+
+    async lrange(key, start, stop) {
+        try {
+            const prefixedKey = this.getPrefixedKey(key);
+            return await this.client.lRange(prefixedKey, start, stop);
+        } catch (error) {
+            logger.error('Redis lrange error', { key, error: error.message });
+            return [];
+        }
+    }
+
+    async expire(key, ttlSeconds) {
+        try {
+            const prefixedKey = this.getPrefixedKey(key);
+            return await this.client.expire(prefixedKey, ttlSeconds);
+        } catch (error) {
+            logger.error('Redis expire error', { key, error: error.message });
+        }
+    }
+
+    async incr(key) {
+        try {
+            const prefixedKey = this.getPrefixedKey(key);
+            return await this.client.incr(prefixedKey);
+        } catch (error) {
+            logger.error('Redis incr error', { key, error: error.message });
+        }
+    }
+
     async del(key) {
         const prefixedKey = this.getPrefixedKey(key);
         try {

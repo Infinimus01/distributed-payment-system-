@@ -33,6 +33,11 @@ function createPaymentRoutes(paymentController) {
         paymentController.reconcile(req, res, next);
     });
 
+    // Anomaly check — manually check a payment for fraud signals
+    router.get('/anomaly/check/:userId', (req, res, next) => {
+        paymentController.getAnomalyStats(req, res, next);
+    });
+
     // Update payment status
     router.patch('/:paymentId/status', (req, res, next) => {
         paymentController.updatePaymentStatus(req, res, next);

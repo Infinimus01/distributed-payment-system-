@@ -126,6 +126,18 @@ class PaymentRoutes {
             next(error);
         }
     }
+
+    async getAnomalyStats(req, res, next) {
+        try {
+            const { userId } = req.params;
+            const result = await this.serviceProxy.forwardToPaymentService(
+                'GET', `/payments/anomaly/check/${userId}`
+            );
+            res.status(result.status).json(result.data);
+        } catch (error) {
+            next(error);
+        }
+    }
 }
 
 module.exports = PaymentRoutes;

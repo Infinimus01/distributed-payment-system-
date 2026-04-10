@@ -5,10 +5,11 @@ const { StatusCodes } = require('http-status-codes');
  * Payment Controller - HTTP request handlers
  */
 class PaymentController {
-    constructor(paymentService, paymentProcessor, reconciliationService) {
+    constructor(paymentService, paymentProcessor, reconciliationService, anomalyDetector) {
         this.paymentService = paymentService;
         this.paymentProcessor = paymentProcessor;
         this.reconciliationService = reconciliationService;
+        this.anomalyDetector = anomalyDetector;
     }
 
     /**
@@ -55,6 +56,25 @@ class PaymentController {
                 metadata,
                 idempotencyKey
             });
+
+            // Anomaly check — run after payment created, non-blocking
+            if (this.anomalyDetector && !result.duplicate) {
+                try {
+                    const anomaly = await this.anomalyDetector.check(result.payment);
+                    await this.anomalyDetector.record(result.payment);
+                    if (anomaly.flagged) {
+                        logger.warn('ANOMALY DETECTED', {
+                            paymentId: result.payment.id,
+                            userId: result.payment.userId,
+                            amount: result.payment.amount,
+                            reason: anomaly.reason,
+                            severity: anomaly.severity,
+                        });
+                    }
+                } catch (anomalyErr) {
+                    logger.warn('Anomaly check failed', { error: anomalyErr.message });
+                }
+            }
 
             // Return 200 for duplicates, 201 for new payments
             const statusCode = result.duplicate ? StatusCodes.OK : StatusCodes.CREATED;
@@ -340,6 +360,17 @@ class PaymentController {
                 limit: limit ? parseInt(limit) : 100,
             });
             res.status(200).json({ success: true, data: results });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    async getAnomalyStats(req, res, next) {
+        try {
+            const { userId } = req.params;
+            const fakePayment = { id: 'check', userId, amount: 0 };
+            const result = await this.anomalyDetector.check(fakePayment);
+            res.status(200).json({ success: true, data: { userId, ...result } });
         } catch (error) {
             next(error);
         }
