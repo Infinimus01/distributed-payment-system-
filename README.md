@@ -1,6 +1,6 @@
 # PayCore — Distributed Payment Infrastructure
 
-> Production-grade payment processing engine built for fintech teams who are tired of rebuilding the same reliability patterns from scratch.
+Production-grade payment processing engine built for fintech teams who are tired of rebuilding the same reliability patterns from scratch.
 
 ## The Problem
 
